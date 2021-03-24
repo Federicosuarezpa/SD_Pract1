@@ -11,10 +11,7 @@ from aux_functions import *
 
 # variables globales que nos harán falta para la creación de los workers
 JOB_ID = 1
-worker_active = []
-worker_active.append(True)
-worker_active.append(True)
-worker_active.append(True)
+worker_active = [True, True, True]
 number_workers = 0
 
 # definimos los datos para conectarnos a la base de datos
@@ -29,7 +26,8 @@ except Exception as e:
     print(e)
 
 
-def task_work(url, task, id):
+def task_work(url, task, id, op):
+    global JOB_ID
     url = url.replace('[', '')
     url = url.replace(']', '')
 
@@ -38,7 +36,12 @@ def task_work(url, task, id):
     words = 0
     if task == 'run-wordcount':
         words = count_words(work_string)
-        r.rpush(id, words)
+        if op:
+            id_job = id + '_ready'
+            r.rpush(id_job, words)
+            JOB_ID += 1
+        else:
+            r.rpush(id, words)
     elif task == 'run-countwords':
         words = count_rec(work_string)
         my_dict = pickle.dumps(words)
@@ -47,11 +50,16 @@ def task_work(url, task, id):
         while r.exists(id_work):
             value = value + 1
             id_work = id + str(value)
-        r.set(id_work, my_dict)
+        if op:
+            id_job = id + '_ready'
+            r.set(id_job, my_dict)
+            JOB_ID += 1
+        else:
+            r.set(id_work, my_dict)
 
 
 def create_worker(num):
-    global dict
+    global dict, JOB_ID
     while worker_active[num]:
         if r.llen('redisList') > 0:
             work = r.lpop('redisList')
@@ -80,7 +88,7 @@ def create_worker(num):
                     # sustituimos el valor que teníamos en posición 0 que era la tarea original con todas las url
                     # por una nueva con una url menos que será la que ha cogido este worker
                     r.lpush('redisList', task_new)
-                    task_work(url, task, id)
+                    task_work(url, task, id, 0)
 
                 elif length == 3:
                     id = work.pop(0)
@@ -89,15 +97,13 @@ def create_worker(num):
                     # si existe la lista con este job_id es porque es una multitarea, y tenemos que poner
                     # en la primera posición de la redisList una tarea que solo tenga 2 de longitud para que otro worker
                     # se prepare para devolver los resultados una vez acabados
-                    task_work(url, task, id)
                     if r.exists(id):
                         r.lpush('redisList', id + ',' + task)
-                        task_work(url, task, id)
+                        task_work(url, task, id, 0)
                     # si no, simplemente quitamos la tarea de la lista
                     else:
-                        id_job = id + '_ready'
-                        task_work(url, task, id)
-                else:
+                        task_work(url, task, id, 1)
+                elif length == 2:
                     # quitamos ya la tarea de la lista definitivamente ya que este será el último paso
                     r.lpop('redisList')
                     id = work.pop(0)
@@ -113,11 +119,11 @@ def create_worker(num):
                             # una vez todas completadas cogemos todos los valores de la lista y los sumamos
                             values = r.lrange(id, 0, task_pending - 1)
                             sum = 0
-                            print(values)
-                            for value in values:
-                                sum = sum + int(value.decode('ascii'))
-                            id_job = id + '_ready'
-                            r.rpush(id_job, sum)
+                        for value in values:
+                            sum = sum + int(value.decode('ascii'))
+                        id_job = id + '_ready'
+                        r.rpush(id_job, sum)
+                        JOB_ID += 1
                     elif task == 'run-countwords':
                         count = dict()
                         id_work = id + str(task_pending)
@@ -135,10 +141,11 @@ def create_worker(num):
                                     count[key] += array[i].get(key)
                                 else:
                                     count[key] = array[i].get(key)
-                        print('holahola')
                         id_job = id + '_ready'
                         count_dict = pickle.dumps(count)
                         r.set(id_job, count_dict)
+                        JOB_ID += 1
+
 
 
 def create_workers(num_workers):
@@ -168,12 +175,14 @@ class SimpleThreadedXMLRPCServer(ThreadingMixIn, SimpleXMLRPCServer):
 
 def addtask(task):
     task_do = task.split(',')
-    task_do = task_do[1]
+    task_do = task_do[0]
+    task = str(JOB_ID) + ',' + task
+    print(task)
     r.rpush('redisList', task)
     id = str(JOB_ID) + '_ready'
     while not r.exists(id):
         time.sleep(0.1)
-    if task_do == 'run-wordscount':
+    if task_do == 'run-wordcount':
         value = r.lpop(id)
     else:
         dictio = r.get(id)
