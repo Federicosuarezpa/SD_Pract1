@@ -147,7 +147,6 @@ def create_worker(num):
                         JOB_ID += 1
 
 
-
 def create_workers(num_workers):
     processes = []
     for value in range(num_workers):
