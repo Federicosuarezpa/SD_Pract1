@@ -2,13 +2,19 @@ import json
 import multiprocessing
 import redis
 import requests
+import random
 from xmlrpc.server import SimpleXMLRPCServer
+from socketserver import ThreadingMixIn
 import logging
+import time
 from aux_functions import *
 
 # variables globales que nos harán falta para la creación de los workers
-JOB_ID = 0
-workers_active = []
+JOB_ID = 1
+worker_active = []
+worker_active.append(True)
+worker_active.append(True)
+worker_active.append(True)
 number_workers = 0
 
 # definimos los datos para conectarnos a la base de datos
@@ -23,74 +29,98 @@ except Exception as e:
     print(e)
 
 
+def task_work(url, task, id):
+    url = url.replace('[', '')
+    url = url.replace(']', '')
+
+    request = requests.get(url, allow_redirects=True)
+    work_string = request.content.decode(request.encoding)
+    words = 0
+    if task == 'run-wordcount':
+        words = count_words(work_string)
+        r.rpush(id, words)
+    elif task == 'run-countwords':
+        words = count_rec(work_string)
+        r.hmset(id, words)
+
+
 def create_worker(num):
-    while workers_active[num]:
+    while worker_active[num]:
         if r.llen('redisList') > 0:
-            work = r.lrange('redisList', 0, 0)
+            work = r.lpop('redisList')
             # decodificamos la tarea, ya que se guarda en binario en la lista de redis y la separamos por ','
             # el formato será ('Job_ID','Tarea_realizar','URl_1, URL_2, ...'
-            work = work[0].decode('ascii').split(',')
-            print(work)
-            # cogemos la longitud de la tarea spliteada, para saber si se trata de una tarea simple o múltiple
-            length = len(work)
-            if length > 3:
-                # cogemos los argumentos para tratar la multitarea
-                id = work.pop(0)
-                task = work.pop(0)
-                url = work.pop(0)
-                new_work = ''
-                for urls in work:
-                    new_work = new_work + urls + ','
-                # eliminamos la última coma que se nos colocará en el array concatenado para volver a ponerlo en la lista
-                new_work = new_work[:-2]
-                # concatenamos el job_id, task y las url
-                task_new = id + ',' + task + ',' + new_work
-                # pusheamos en una lista del job_id la longitud que tiene la multitarea, 2 o más elementos
-                r.rpush(id, length)
-                # sustituimos el valor que teníamos en posición 0 que era la tarea original con todas las url
-                # por una nueva con una url menos que será la que ha cogido este worker
-                r.lset('redisList', 0, task_new)
-            elif length == 3:
-                id = work.pop(0)
-                task = work.pop(0)
-                url = work.pop
-                # si existe la lista con este job_id es porque es una multitarea, y tenemos que poner
-                # en la primera posición de la redisList una tarea que solo tenga 2 de longitud para que otro worker
-                # se prepare para devolver los resultados una vez acabados
-                if r.exists(id):
-                    r.lset('redisList', 0, id + ',' + task)
-                # si no, simplemente quitamos la tarea de la lista
+            if work:
+                work = work.decode('ascii').split(',')
+                # cogemos la longitud de la tarea spliteada, para saber si se trata de una tarea simple o múltiple
+                length = len(work)
+                print(length)
+                if length > 3:
+                    # cogemos los argumentos para tratar la multitarea
+                    id = work.pop(0)
+                    task = work.pop(0)
+                    url = work.pop(0)
+                    new_work = ''
+                    for urls in work:
+                        new_work = new_work + urls + ','
+                    # eliminamos la última coma que se nos colocará en el array concatenado para volver a ponerlo en la lista
+                    new_work = new_work[:-1]
+                    new_work = new_work.replace('[', '')
+                    new_work = new_work.replace(']', '')
+                    # concatenamos el job_id, task y las url
+                    task_new = id + ',' + task + ',' + new_work
+                    # pusheamos en una lista del job_id la longitud que tiene la multitarea, 2 o más elementos
+                    r.rpush(id, length - 2)
+                    # sustituimos el valor que teníamos en posición 0 que era la tarea original con todas las url
+                    # por una nueva con una url menos que será la que ha cogido este worker
+                    r.lpush('redisList', task_new)
+                    task_work(url, task, id)
+
+                elif length == 3:
+                    id = work.pop(0)
+                    task = work.pop(0)
+                    url = work.pop(0)
+                    # si existe la lista con este job_id es porque es una multitarea, y tenemos que poner
+                    # en la primera posición de la redisList una tarea que solo tenga 2 de longitud para que otro worker
+                    # se prepare para devolver los resultados una vez acabados
+                    task_work(url, task, id)
+                    if r.exists(id):
+                        r.lpush('redisList', id + ',' + task)
+                        task_work(url, task, id)
+                    # si no, simplemente quitamos la tarea de la lista
+                    else:
+                        id_job = id + '_ready'
+                        task_work(url, task, id)
                 else:
+                    # quitamos ya la tarea de la lista definitivamente ya que este será el último paso
                     r.lpop('redisList')
-            else:
-                # quitamos ya la tarea de la lista definitivamente ya que este será el último paso
-                r.lpop('redisList')
-                id = work.pop(0)
-                print(work)
-                # cogemos el valor de tareas a completar
-                task_pending = r.lpop(id).decode('ascii')
-                task_pending = int(task_pending)
-                task_completed = r.llen(id)
-                # comprobamos hasta que esten todas completadas, número tareas a completar = tareas completadas
-                while task_pending > task_completed:
+                    id = work.pop(0)
+                    task = work.pop(0)
+                    # cogemos el valor de tareas a completar
+                    task_pending = r.lpop(id).decode('ascii')
+                    task_pending = int(task_pending)
                     task_completed = r.llen(id)
-                # una vez todas completadas cogemos todos los valores de la lista y los sumamos
-                values = r.lrange(id, 0, task_pending).decode('ascii')
-                sum = 0
-                for value in values:
-                    sum = sum + int(value)
-                print(sum)
-
-
-def add_task(task):
-    r.rpush('redisList', task)
-    #msg = r.lpop('redisList')
+                    # comprobamos hasta que esten todas completadas, número tareas a completar = tareas completadas
+                    while task_pending > task_completed:
+                        task_completed = r.llen(id)
+                    if task == 'run-wordcount':
+                        # una vez todas completadas cogemos todos los valores de la lista y los sumamos
+                        values = r.lrange(id, 0, task_pending - 1)
+                        sum = 0
+                        print(values)
+                        for value in values:
+                            sum = sum + int(value.decode('ascii'))
+                        id_job = id + '_ready'
+                        r.rpush(id_job, sum)
+                    elif task == 'run-countwords':
+                        values = r.hgetall(id)
+                        print(values)
 
 
 def create_workers(num_workers):
+    processes = []
     for value in range(num_workers):
         process = multiprocessing.Process(target=create_worker, args=(value,))
-        work_active[value] = True
         processes.append(process)
         process.start()
 
@@ -108,19 +138,31 @@ def add_worker():
     work_active[number_workers - 1] = True
 
 
-if __name__ == '__main__':
+class SimpleThreadedXMLRPCServer(ThreadingMixIn, SimpleXMLRPCServer):
+    pass
+
+
+def addtask(task):
+    r.rpush('redisList', task)
+    id = str(JOB_ID) + '_ready'
+    while r.llen(id) == 0:
+        time.sleep(0.1)
+    return r.lpop(id)
+
+
+# run server
+def run_server(host="localhost", port=9000):
+    r.flushall()
     create_workers(3)
-    server = SimpleXMLRPCServer(('localhost', 9000),
-                                logRequests=True,
-                                allow_none=True)
-    server.register_introspection_functions()
-    server.register_multicall_functions()
+    server_addr = (host, port)
+    server = SimpleThreadedXMLRPCServer(server_addr)
+    server.register_function(addtask, 'addtask')
 
-    server.register_function(add_task)
+    print("Server thread started. Testing server ...")
+    print('listening on {} port {}'.format(host, port))
 
-    try:
-        print('Use Control-C to exit')
-        server.serve_forever()
-    except KeyboardInterrupt:
-        print('Exiting')
-    r.ltrim('redisList', -1, 0)
+    server.serve_forever()
+
+
+if __name__ == '__main__':
+    run_server()

@@ -5,7 +5,6 @@ def count_words(string):
 def count_rec(string):
     count = dict()
     string = string.split()
-    print(string)
     for words in string:
         if words in count:
             count[words] += 1
