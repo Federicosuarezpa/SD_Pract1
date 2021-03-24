@@ -1,4 +1,4 @@
-import json
+import pickle
 import multiprocessing
 import redis
 import requests
@@ -41,10 +41,17 @@ def task_work(url, task, id):
         r.rpush(id, words)
     elif task == 'run-countwords':
         words = count_rec(work_string)
-        r.hmset(id, words)
+        my_dict = pickle.dumps(words)
+        value = 0
+        id_work = id + str(value)
+        while r.exists(id_work):
+            value = value + 1
+            id_work = id + str(value)
+        r.set(id_work, my_dict)
 
 
 def create_worker(num):
+    global dict
     while worker_active[num]:
         if r.llen('redisList') > 0:
             work = r.lpop('redisList')
@@ -54,7 +61,6 @@ def create_worker(num):
                 work = work.decode('ascii').split(',')
                 # cogemos la longitud de la tarea spliteada, para saber si se trata de una tarea simple o múltiple
                 length = len(work)
-                print(length)
                 if length > 3:
                     # cogemos los argumentos para tratar la multitarea
                     id = work.pop(0)
@@ -99,22 +105,40 @@ def create_worker(num):
                     # cogemos el valor de tareas a completar
                     task_pending = r.lpop(id).decode('ascii')
                     task_pending = int(task_pending)
-                    task_completed = r.llen(id)
-                    # comprobamos hasta que esten todas completadas, número tareas a completar = tareas completadas
-                    while task_pending > task_completed:
-                        task_completed = r.llen(id)
                     if task == 'run-wordcount':
-                        # una vez todas completadas cogemos todos los valores de la lista y los sumamos
-                        values = r.lrange(id, 0, task_pending - 1)
-                        sum = 0
-                        print(values)
-                        for value in values:
-                            sum = sum + int(value.decode('ascii'))
-                        id_job = id + '_ready'
-                        r.rpush(id_job, sum)
+                        task_completed = r.llen(id)
+                        # comprobamos hasta que esten todas completadas, número tareas a completar = tareas completadas
+                        while task_pending > task_completed:
+                            task_completed = r.llen(id)
+                            # una vez todas completadas cogemos todos los valores de la lista y los sumamos
+                            values = r.lrange(id, 0, task_pending - 1)
+                            sum = 0
+                            print(values)
+                            for value in values:
+                                sum = sum + int(value.decode('ascii'))
+                            id_job = id + '_ready'
+                            r.rpush(id_job, sum)
                     elif task == 'run-countwords':
-                        values = r.hgetall(id)
-                        print(values)
+                        count = dict()
+                        id_work = id + str(task_pending)
+                        array = []
+                        while not r.exists(id_work):
+                            time.sleep(0.5)
+                        for i in range(task_pending):
+                            id_work = id + str(i)
+                            dicti = r.get(id_work)
+                            dicti = pickle.loads(dicti)
+                            array.append(dicti)
+                        for i in range(task_pending):
+                            for key in array[i]:
+                                if key in count:
+                                    count[key] += array[i].get(key)
+                                else:
+                                    count[key] = array[i].get(key)
+                        print('holahola')
+                        id_job = id + '_ready'
+                        count_dict = pickle.dumps(count)
+                        r.set(id_job, count_dict)
 
 
 def create_workers(num_workers):
@@ -143,15 +167,22 @@ class SimpleThreadedXMLRPCServer(ThreadingMixIn, SimpleXMLRPCServer):
 
 
 def addtask(task):
+    task_do = task.split(',')
+    task_do = task_do[1]
     r.rpush('redisList', task)
     id = str(JOB_ID) + '_ready'
-    while r.llen(id) == 0:
+    while not r.exists(id):
         time.sleep(0.1)
-    return r.lpop(id)
+    if task_do == 'run-wordscount':
+        value = r.lpop(id)
+    else:
+        dictio = r.get(id)
+        value = pickle.loads(dictio)
+    return value
 
 
 # run server
-def run_server(host="localhost", port=9000):
+def run_server(host="localhost", port=9050):
     r.flushall()
     create_workers(3)
     server_addr = (host, port)
