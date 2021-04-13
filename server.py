@@ -168,7 +168,7 @@ def delete_worker(nWorkers):
 def add_worker():
     global number_workers
     number_workers = number_workers + 1
-    work_active[number_workers - 1] = True
+    work_active[number_workers + 1] = True
 
 
 class SimpleThreadedXMLRPCServer(ThreadingMixIn, SimpleXMLRPCServer):
@@ -181,12 +181,13 @@ def addtask(task):
     task_do = task_split[0]
     task = str(JOB_ID) + ',' + task
     #Miramos que tipos de task ha llegado
-    if(task_do == "delete"):
+    if(task_do == 'delete'):
         nworkers = task_split[2]
         delete_worker(nworkers)
-    elif(task_d == "create"):
+    elif(task_d == 'create'):
         nworkers = task_split[2]
-        create_workers(nworkers)
+        add_worker()
+        create_workers(1)
     else:
         print(task)
         r.rpush('redisList', task)
