@@ -155,11 +155,14 @@ def create_workers(num_workers):
         process.start()
 
 
-def delete_worker():
+def delete_worker(nWorkers):
     global number_workers
     if r.llen('redisList') == 0:
-        work_active[number_workers - 1] = False
-        number_workers = number_workers - 1
+        if nWorkers <= number_workers:
+            while(nWorkers > 0):
+                work_active[number_workers - 1] = False
+                number_workers = number_workers - 1
+                nWorkers = nWorkers -1
 
 
 def add_worker():
@@ -173,19 +176,30 @@ class SimpleThreadedXMLRPCServer(ThreadingMixIn, SimpleXMLRPCServer):
 
 
 def addtask(task):
+
     task_do = task.split(',')
+    if len(task_do) > 1:
+        aux = task_do[2]
     task_do = task_do[0]
     task = str(JOB_ID) + ',' + task
-    print(task)
-    r.rpush('redisList', task)
-    id = str(JOB_ID) + '_ready'
-    while not r.exists(id):
-        time.sleep(0.1)
-    if task_do == 'run-wordcount':
-        value = r.lpop(id)
+    #Miramos que tipos de task ha llegado
+    if(task_do == "delete"):
+        nworkers = aux
+        delete_worker(nworkers)
+    elif(task_d == "create"):
+        nworkers = aux
+        create_workers(nworkers)
     else:
-        dictio = r.get(id)
-        value = pickle.loads(dictio)
+        print(task)
+        r.rpush('redisList', task)
+        id = str(JOB_ID) + '_ready'
+        while not r.exists(id):
+            time.sleep(0.1)
+        if task_do == 'run-wordcount':
+            value = r.lpop(id)
+        else:
+            dictio = r.get(id)
+            value = pickle.loads(dictio)
     return value
 
 
