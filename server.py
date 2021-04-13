@@ -177,17 +177,15 @@ class SimpleThreadedXMLRPCServer(ThreadingMixIn, SimpleXMLRPCServer):
 
 def addtask(task):
 
-    task_do = task.split(',')
-    if len(task_do) > 1:
-        aux = task_do[2]
-    task_do = task_do[0]
+    task_split = task.split(',')
+    task_do = task_split[0]
     task = str(JOB_ID) + ',' + task
     #Miramos que tipos de task ha llegado
     if(task_do == "delete"):
-        nworkers = aux
+        nworkers = task_split[2]
         delete_worker(nworkers)
     elif(task_d == "create"):
-        nworkers = aux
+        nworkers = task_split[2]
         create_workers(nworkers)
     else:
         print(task)
