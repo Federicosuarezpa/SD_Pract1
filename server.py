@@ -2,10 +2,8 @@ import pickle
 import multiprocessing
 import redis
 import requests
-import random
 from xmlrpc.server import SimpleXMLRPCServer
 from socketserver import ThreadingMixIn
-import logging
 import time
 from aux_functions import *
 
@@ -33,7 +31,6 @@ def task_work(url, task, id, op):
 
     request = requests.get(url, allow_redirects=True)
     work_string = request.content.decode(request.encoding)
-    words = 0
     if task == 'run-wordcount':
         words = count_words(work_string)
         if op:
@@ -84,7 +81,8 @@ def create_worker(num):
                     # concatenamos el job_id, task y las url
                     task_new = id + ',' + task + ',' + new_work
                     # pusheamos en una lista del job_id la longitud que tiene la multitarea, 2 o más elementos
-                    r.rpush(id, length - 2)
+                    if not r.exists(id):
+                        r.rpush(id, length - 2)
                     # sustituimos el valor que teníamos en posición 0 que era la tarea original con todas las url
                     # por una nueva con una url menos que será la que ha cogido este worker
                     r.lpush('redisList', task_new)
@@ -174,11 +172,12 @@ class SimpleThreadedXMLRPCServer(ThreadingMixIn, SimpleXMLRPCServer):
 
 def addtask(task):
     task_do = task.split(',')
+    task_do[0] = 'run-wordcount'
     task_do = task_do[0]
     task = str(JOB_ID) + ',' + task
-    print(task)
     r.rpush('redisList', task)
     id = str(JOB_ID) + '_ready'
+    print(task)
     while not r.exists(id):
         time.sleep(0.1)
     if task_do == 'run-wordcount':
