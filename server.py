@@ -8,7 +8,6 @@ import time
 from aux_functions import *
 
 # variables globales que nos harán falta para la creación de los workers
-JOB_ID = 1
 worker_active = [True, True, True]
 number_workers = 0
 
@@ -25,7 +24,6 @@ except Exception as e:
 
 
 def task_work(url, task, id, op):
-    global JOB_ID
     url = url.replace('[', '')
     url = url.replace(']', '')
 
@@ -36,27 +34,24 @@ def task_work(url, task, id, op):
         if op:
             id_job = id + '_ready'
             r.rpush(id_job, words)
-            JOB_ID += 1
         else:
             r.rpush(id, words)
     elif task == 'run-countwords':
+        id_push = id + '_count'
+        r.rpush(id_push, '1')
+        num = r.llen(id_push)
         words = count_rec(work_string)
         my_dict = pickle.dumps(words)
-        value = 0
-        id_work = id + str(value)
-        while r.exists(id_work):
-            value = value + 1
-            id_work = id + str(value)
+        print(num)
+        id_work = id + str(num)
         if op:
             id_job = id + '_ready'
             r.set(id_job, my_dict)
-            JOB_ID += 1
         else:
             r.set(id_work, my_dict)
 
 
 def create_worker(num):
-    global dict, JOB_ID
     while worker_active[num]:
         if r.llen('redisList') > 0:
             work = r.lpop('redisList')
@@ -121,7 +116,6 @@ def create_worker(num):
                             sum = sum + int(value.decode('ascii'))
                         id_job = id + '_ready'
                         r.rpush(id_job, sum)
-                        JOB_ID += 1
                     elif task == 'run-countwords':
                         count = dict()
                         id_work = id + str(task_pending)
@@ -129,10 +123,10 @@ def create_worker(num):
                         while not r.exists(id_work):
                             time.sleep(0.5)
                         for i in range(task_pending):
-                            id_work = id + str(i)
-                            dicti = r.get(id_work)
-                            dicti = pickle.loads(dicti)
-                            array.append(dicti)
+                            id_work = id + str(i + 1)
+                            dicta = r.get(id_work)
+                            dicta = pickle.loads(dicta)
+                            array.append(dicta)
                         for i in range(task_pending):
                             for key in array[i]:
                                 if key in count:
@@ -142,7 +136,6 @@ def create_worker(num):
                         id_job = id + '_ready'
                         count_dict = pickle.dumps(count)
                         r.set(id_job, count_dict)
-                        JOB_ID += 1
 
 
 def create_workers(num_workers):
@@ -171,12 +164,18 @@ class SimpleThreadedXMLRPCServer(ThreadingMixIn, SimpleXMLRPCServer):
 
 
 def addtask(task):
+    id_num = 0
+    if r.exists('job_id'):
+        id_num = str(r.lpop('job_id').decode('ascii'))
+    else:
+        id_num = 0
     task_do = task.split(',')
-    task_do[0] = 'run-wordcount'
     task_do = task_do[0]
-    task = str(JOB_ID) + ',' + task
+    task = str(id_num) + ',' + task
     r.rpush('redisList', task)
-    id = str(JOB_ID) + '_ready'
+    id = str(id_num) + '_ready'
+    id_num = int(id_num) + 1
+    r.rpush('job_id', id_num)
     print(task)
     while not r.exists(id):
         time.sleep(0.1)
@@ -189,7 +188,7 @@ def addtask(task):
 
 
 # run server
-def run_server(host="localhost", port=9050):
+def run_server(host="localhost", port=10000):
     r.flushall()
     create_workers(3)
     server_addr = (host, port)
