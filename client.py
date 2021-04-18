@@ -20,5 +20,5 @@ def start_connection(task, url):
 if __name__ == '__main__':
     #start_connection()
     server = xmlrpc.client.ServerProxy("http://localhost:10000/", allow_none=True)
-    url = 'run-countwords,[http://localhost:8000/file1.txt], [http://localhost:8000/file1.txt], [http://localhost:8000/file1.txt], [http://localhost:8000/file2.txt], [http://localhost:8000/file2.txt]'
+    url = 'run-countwords,[http://localhost:8000/file1.txt], [http://localhost:8000/file1.txt], [http://localhost:8000/file2.txt], [http://localhost:8000/file2.txt], [http://localhost:8000/file2.txt], [http://localhost:8000/file2.txt]'
     print(server.addtask(url))

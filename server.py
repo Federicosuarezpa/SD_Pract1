@@ -37,18 +37,26 @@ def task_work(url, task, id, op):
         else:
             r.rpush(id, words)
     elif task == 'run-countwords':
-        id_push = id + '_count'
-        r.rpush(id_push, '1')
-        num = r.llen(id_push)
         words = count_rec(work_string)
         my_dict = pickle.dumps(words)
-        print(num)
-        id_work = id + str(num)
         if op:
             id_job = id + '_ready'
             r.set(id_job, my_dict)
         else:
-            r.set(id_work, my_dict)
+            id_work = id + '_work'
+            task_number = r.lpop(id_work)
+            while not task_number:
+                task_number = r.lpop(id_work)
+            print(task_number)
+            task_number = task_number.decode('ascii')
+            task_number = int(task_number)
+            task_name = str(task_number) + str(id)
+            r.set(task_name, my_dict)
+            pending = id + '_wait'
+            r.rpush(pending, 'finished')
+            task_number = task_number - 1
+            if task_number != 0:
+                r.rpush(id_work, task_number)
 
 
 def create_worker(num):
@@ -66,6 +74,7 @@ def create_worker(num):
                     id = work.pop(0)
                     task = work.pop(0)
                     url = work.pop(0)
+                    print(url)
                     new_work = ''
                     for urls in work:
                         new_work = new_work + urls + ','
@@ -77,7 +86,9 @@ def create_worker(num):
                     task_new = id + ',' + task + ',' + new_work
                     # pusheamos en una lista del job_id la longitud que tiene la multitarea, 2 o más elementos
                     if not r.exists(id):
+                        id_work = id + '_work'
                         r.rpush(id, length - 2)
+                        r.rpush(id_work, length - 2)
                     # sustituimos el valor que teníamos en posición 0 que era la tarea original con todas las url
                     # por una nueva con una url menos que será la que ha cogido este worker
                     r.lpush('redisList', task_new)
@@ -118,12 +129,13 @@ def create_worker(num):
                         r.rpush(id_job, sum)
                     elif task == 'run-countwords':
                         count = dict()
-                        id_work = id + str(task_pending)
                         array = []
-                        while not r.exists(id_work):
+                        pending = id + '_wait'
+                        while r.llen(pending) < task_pending:
                             time.sleep(0.5)
                         for i in range(task_pending):
-                            id_work = id + str(i + 1)
+                            id_number = str(i + 1)
+                            id_work = id_number + id
                             dicta = r.get(id_work)
                             dicta = pickle.loads(dicta)
                             array.append(dicta)
@@ -176,7 +188,6 @@ def addtask(task):
     id = str(id_num) + '_ready'
     id_num = int(id_num) + 1
     r.rpush('job_id', id_num)
-    print(task)
     while not r.exists(id):
         time.sleep(0.1)
     if task_do == 'run-wordcount':
