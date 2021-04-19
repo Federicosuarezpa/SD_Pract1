@@ -1,24 +1,28 @@
-import xmlrpc.client
+import xmlrpc
+
 import click
-from concurrent.futures import ThreadPoolExecutor, as_completed
-import random
 
 
 @click.command()
-@click.option('--url', default='null', help='Url to scan')
-@click.option('--task', default='null', help='Task to do')
-def start_connection(task, url):
-    if task == 'null':
-        task = input('Por favor le falta por introducir la tarea')
-    if url == 'null':
-        url = input('Por favor le falta darme una url con el formato http://localhost:10000/file.txt')
+@click.argument('type_task', nargs=1, required=True)
+@click.argument('task', nargs=1, required=True)
+@click.argument('url', default='[http://localhost:8000/]')
+@click.option('-n', default=1, type=int, nargs=1)
+def start_connection(type_task, task, url, n):
     server = xmlrpc.client.ServerProxy("http://localhost:9050/", allow_none=True)
-    argument = task + ',' + url
-    print(argument)
+
+    if type_task == 'worker':
+        if task == 'create':
+            print('CREATING', n, 'WORKERS')
+            # server.create_workers(n)
+        elif task == 'delete':
+            print('DELETING', n, 'WORKERS')
+            # server.delete_worker()
+    elif type_task == 'job':
+        argument = task + ',' + url
+        print('ADDING TASK:', argument)
+        # server.addtask(argument)
 
 
 if __name__ == '__main__':
-    #start_connection()
-    server = xmlrpc.client.ServerProxy("http://localhost:10000/", allow_none=True)
-    url = 'run-countwords,[http://localhost:8000/file1.txt], [http://localhost:8000/file1.txt], [http://localhost:8000/file2.txt], [http://localhost:8000/file2.txt], [http://localhost:8000/file2.txt], [http://localhost:8000/file2.txt]'
-    print(server.addtask(url))
+    start_connection()

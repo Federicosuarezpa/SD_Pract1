@@ -8,8 +8,9 @@ import time
 from aux_functions import *
 
 # variables globales que nos harán falta para la creación de los workers
-worker_active = [True, True, True]
+worker_active = []
 number_workers = 0
+processes = []
 
 # definimos los datos para conectarnos a la base de datos
 redis_host = 'localhost'
@@ -160,17 +161,22 @@ def create_worker(num):
 
 #modificar funciones, y hacer workers a través de redis
 def create_workers(num_workers):
-    processes = []
+    global number_workers
+    global processes
     for value in range(num_workers):
         process = multiprocessing.Process(target=create_worker, args=(value,))
         processes.append(process)
+        worker_active.append(True)
         process.start()
+        number_workers = number_workers + 1
+        # work_active[number_workers - 1] = True
 
 
 def delete_worker():
     global number_workers
     if r.llen('redisList') == 0:
-        work_active[number_workers - 1] = False
+        del worker_active[number_workers - 1]
+        processes[number_workers - 1].terminate()
         number_workers = number_workers - 1
 
 
