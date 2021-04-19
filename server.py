@@ -35,7 +35,8 @@ def task_work(url, task, id, op):
             id_job = id + '_ready'
             r.rpush(id_job, words)
         else:
-            r.rpush(id, words)
+            id_job = id + '_jobcompleted'
+            r.rpush(id_job, words)
     elif task == 'run-countwords':
         words = count_rec(work_string)
         my_dict = pickle.dumps(words)
@@ -47,7 +48,6 @@ def task_work(url, task, id, op):
             task_number = r.lpop(id_work)
             while not task_number:
                 task_number = r.lpop(id_work)
-            print(task_number)
             task_number = task_number.decode('ascii')
             task_number = int(task_number)
             task_name = str(task_number) + str(id)
@@ -55,12 +55,14 @@ def task_work(url, task, id, op):
             pending = id + '_wait'
             r.rpush(pending, 'finished')
             task_number = task_number - 1
-            if task_number != 0:
-                r.rpush(id_work, task_number)
+            r.rpush(id_work, task_number)
 
 
+# mañana hacer pruebas para comprobar funcionamiento, arreglar errores y limpiar codigo, dejarlo mas legible
+# poner workers a través de lista redis y ya estaría.
 def create_worker(num):
     while worker_active[num]:
+        time.sleep(0.5)
         if r.llen('redisList') > 0:
             work = r.lpop('redisList')
             # decodificamos la tarea, ya que se guarda en binario en la lista de redis y la separamos por ','
@@ -74,7 +76,6 @@ def create_worker(num):
                     id = work.pop(0)
                     task = work.pop(0)
                     url = work.pop(0)
-                    print(url)
                     new_work = ''
                     for urls in work:
                         new_work = new_work + urls + ','
@@ -84,10 +85,11 @@ def create_worker(num):
                     new_work = new_work.replace(']', '')
                     # concatenamos el job_id, task y las url
                     task_new = id + ',' + task + ',' + new_work
+                    id_job = id + '_job'
                     # pusheamos en una lista del job_id la longitud que tiene la multitarea, 2 o más elementos
-                    if not r.exists(id):
+                    if not r.exists(id_job):
                         id_work = id + '_work'
-                        r.rpush(id, length - 2)
+                        r.rpush(id_job, length - 2)
                         r.rpush(id_work, length - 2)
                     # sustituimos el valor que teníamos en posición 0 que era la tarea original con todas las url
                     # por una nueva con una url menos que será la que ha cogido este worker
@@ -98,10 +100,11 @@ def create_worker(num):
                     id = work.pop(0)
                     task = work.pop(0)
                     url = work.pop(0)
+                    id_job = id + '_job'
                     # si existe la lista con este job_id es porque es una multitarea, y tenemos que poner
                     # en la primera posición de la redisList una tarea que solo tenga 2 de longitud para que otro worker
                     # se prepare para devolver los resultados una vez acabados
-                    if r.exists(id):
+                    if r.exists(id_job):
                         r.lpush('redisList', id + ',' + task)
                         task_work(url, task, id, 0)
                     # si no, simplemente quitamos la tarea de la lista
@@ -113,15 +116,21 @@ def create_worker(num):
                     id = work.pop(0)
                     task = work.pop(0)
                     # cogemos el valor de tareas a completar
-                    task_pending = r.lpop(id).decode('ascii')
-                    task_pending = int(task_pending)
+                    id_job = id + '_job'
+                    task_pending = r.lpop(id_job)
+                    while not task_pending:
+                        task_pending = r.lpop(id_job)
+                    if task_pending:
+                        task_pending = task_pending.decode('ascii')
+                        task_pending = int(task_pending)
                     if task == 'run-wordcount':
-                        task_completed = r.llen(id)
+                        id_jobs = id + '_jobcompleted'
+                        task_completed = 0
                         # comprobamos hasta que esten todas completadas, número tareas a completar = tareas completadas
                         while task_pending > task_completed:
-                            task_completed = r.llen(id)
+                            task_completed = r.llen(id_jobs)
                             # una vez todas completadas cogemos todos los valores de la lista y los sumamos
-                            values = r.lrange(id, 0, task_pending - 1)
+                            values = r.lrange(id_jobs, 0, task_pending - 1)
                             sum = 0
                         for value in values:
                             sum = sum + int(value.decode('ascii'))
@@ -149,7 +158,7 @@ def create_worker(num):
                         count_dict = pickle.dumps(count)
                         r.set(id_job, count_dict)
 
-
+#modificar funciones, y hacer workers a través de redis
 def create_workers(num_workers):
     processes = []
     for value in range(num_workers):
