@@ -62,7 +62,7 @@ def task_work(url, task, id, op):
 # mañana hacer pruebas para comprobar funcionamiento, arreglar errores y limpiar codigo, dejarlo mas legible
 # poner workers a través de lista redis y ya estaría.
 def create_worker(num):
-    while r.lindex('redisListWorkers', num):
+    while r.lindex('redisListWorkers', num).decode('ascii') == 'True':
         time.sleep(0.5)
         if r.llen('redisList') > 0:
             work = r.lpop('redisList')
@@ -160,10 +160,10 @@ def create_worker(num):
                         r.set(id_job, count_dict)
 
 
-#modificar funciones, y hacer workers a través de redis
 def create_workers(n_workers):
+    global processes
     for value in range(n_workers):
-        process = multiprocessing.Process(target=create_worker, args=(value,))
+        process = multiprocessing.Process(target=create_worker, args=(r.llen('redisListWorkers'),))
         processes.append(process)
         r.rpush('redisListWorkers', 'True')
         process.start()
@@ -172,6 +172,14 @@ def create_workers(n_workers):
 def delete_worker(index):
     if r.llen('redisListWorkers') != 0:
         r.lset('redisListWorkers', index, 'False')
+    processes[index].join()
+
+def list_workers():
+    workers = []
+    for worker in range(r.llen('redisListWorkers')):
+        workers.append("WORKER_ID:" + str(worker) + " STATE: " + r.lindex('redisListWorkers', worker).decode('ascii'))
+
+    return workers
 
 
 class SimpleThreadedXMLRPCServer(ThreadingMixIn, SimpleXMLRPCServer):
@@ -206,10 +214,11 @@ def run_server(host="localhost", port=10000):
     r.flushall()
     create_workers(3)
     server_addr = (host, port)
-    server = SimpleThreadedXMLRPCServer(server_addr)
+    server = SimpleThreadedXMLRPCServer(server_addr, allow_none=True)
     server.register_function(addtask, 'addtask')
     server.register_function(create_workers, 'create_workers')
     server.register_function(delete_worker, 'delete_worker')
+    server.register_function(list_workers, 'list_workers')
 
     print("Server thread started. Testing server ...")
     print('listening on {} port {}'.format(host, port))

@@ -1,7 +1,6 @@
 import xmlrpc
 import xmlrpc.client
 
-
 import click
 
 
@@ -16,10 +15,13 @@ def start_connection(type_task, task, url, n):
     if type_task == 'worker':
         if task == 'create':
             print('CREATING', n, 'WORKERS')
-            print(server.create_workers(n))
+            server.create_workers(n)
         elif task == 'delete':
-            print('DELETING', n, 'WORKERS')
-            server.delete_worker()
+            print('DELETING WORKER WITH ID:', n)
+            server.delete_worker(n)
+        elif task == 'list':
+            print('WORKERS LIST')
+            print(server.list_workers())
     elif type_task == 'job':
         argument = task + ',' + url
         print('ADDING TASK:', argument)
