@@ -112,8 +112,6 @@ def create_worker(num):
                     else:
                         task_work(url, task, id, 1)
                 elif length == 2:
-                    # quitamos ya la tarea de la lista definitivamente ya que este será el último paso
-                    r.lpop('redisList')
                     id = work.pop(0)
                     task = work.pop(0)
                     # cogemos el valor de tareas a completar
@@ -132,11 +130,11 @@ def create_worker(num):
                             task_completed = r.llen(id_jobs)
                             # una vez todas completadas cogemos todos los valores de la lista y los sumamos
                             values = r.lrange(id_jobs, 0, task_pending - 1)
-                            sum = 0
+                            summary = 0
                         for value in values:
-                            sum = sum + int(value.decode('ascii'))
+                            summary = summary + int(value.decode('ascii'))
                         id_job = id + '_ready'
-                        r.rpush(id_job, sum)
+                        r.rpush(id_job, summary)
                     elif task == 'run-countwords':
                         count = dict()
                         array = []
@@ -174,6 +172,7 @@ def delete_worker(index):
         r.lset('redisListWorkers', index, 'False')
     processes[index].join()
 
+
 def list_workers():
     workers = []
     for worker in range(r.llen('redisListWorkers')):
@@ -192,10 +191,11 @@ def addtask(task):
         id_num = str(r.lpop('job_id').decode('ascii'))
     else:
         id_num = 0
+    print('ADDING NEW TASK ' + task + ' WITH ID: ' + str(id_num))
     task_do = task.split(',')
     task_do = task_do[0]
     task = str(id_num) + ',' + task
-    r.rpush('redisList', task)
+    r.lpush('redisList', task)
     id = str(id_num) + '_ready'
     id_num = int(id_num) + 1
     r.rpush('job_id', id_num)
@@ -210,6 +210,7 @@ def addtask(task):
 
 
 # run server
+# Buscar como hacer multiples peticiones con un script
 def run_server(host="localhost", port=10000):
     r.flushall()
     create_workers(3)
