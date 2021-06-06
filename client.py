@@ -3,7 +3,6 @@ import xmlrpc.client
 
 import click
 
-# Mirar como hacer el requirements.txt, hacerlo con las librerías necesarias y probar con mas de dos # llamadas simultáneas. En principio funciona todo bien. Pero por si acaso juego de pruebas
 @click.command()
 @click.argument('type_task', nargs=1, required=True)
 @click.argument('task', nargs=1, required=True)
