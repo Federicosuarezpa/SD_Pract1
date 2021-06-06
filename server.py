@@ -58,9 +58,6 @@ def task_work(url, task, id, op):
             task_number = task_number - 1
             r.rpush(id_work, task_number)
 
-
-# mañana hacer pruebas para comprobar funcionamiento, arreglar errores y limpiar codigo, dejarlo mas legible
-# poner workers a través de lista redis y ya estaría.
 def create_worker(num):
     while r.lindex('redisListWorkers', num).decode('ascii') == 'True':
         time.sleep(0.5)
@@ -210,7 +207,6 @@ def addtask(task):
 
 
 # run server
-# Buscar como hacer multiples peticiones con un script
 def run_server(host="localhost", port=11000):
     r.flushall()
     create_workers(3)
